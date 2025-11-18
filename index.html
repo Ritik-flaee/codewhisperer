@@ -2,6 +2,12 @@
 <html lang="en">
 
 <head>
+  <!--
+    Small inline script to apply the user's preferred theme immediately
+    (before React mounts). This reduces visual flashing when the page
+    loads by setting the `dark` class on the document root based on the
+    stored preference or the OS color-scheme preference.
+  -->
   <script>
     if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       document.documentElement.classList.add('dark')
@@ -14,7 +20,9 @@
 </head>
 
 <body>
+  <!-- Root mount point for React. The app will render into this div. -->
   <div id="root"></div>
+  <!-- Vite entry: loads the module at src/main.tsx which bootstraps React -->
   <script type="module" src="/src/main.tsx"></script>
 </body>
 

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useRef } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus, tomorrow } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -5,8 +6,11 @@ import { Copy, Sparkles, Loader2, Download, Share2, Sun, Moon, Code2, Mic, MicOf
 import { useSearchParams } from "react-router-dom";
 import { useDebounce } from "use-debounce";
 
+// Read API key from Vite environment variables. If not set, some features will
+// show a helpful message instead of calling the remote API.
 const OPENROUTER_KEY = import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined;
 
+// Supported languages for syntax highlighting and friendly labels.
 const LANGUAGES = {
   javascript: { name: "JavaScript", prism: "javascript" },
   typescript: { name: "TypeScript", prism: "typescript" },
@@ -19,40 +23,51 @@ const LANGUAGES = {
   html: { name: "HTML", prism: "markup" },
 };
 
+// Initial placeholder shown in the code textarea.
 const DEFAULT_CODE = `// Say something like: "Create a function that reverses a string in JavaScript"`;
 
 function App() {
+  // Read and write URL search params so the app state is shareable via URL.
   const [searchParams, setSearchParams] = useSearchParams();
   const urlCode = searchParams.get("code");
   const urlLang = searchParams.get("lang") || "typescript";
 
+  // Main UI state
   const [code, setCode] = useState(urlCode ? decodeURIComponent(urlCode) : DEFAULT_CODE);
   const [language, setLanguage] = useState(urlLang);
   const [explanation, setExplanation] = useState("");
   const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(false); // briefly shows "Copied!"
   const [darkMode, setDarkMode] = useState(true);
-  const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const [listening, setListening] = useState(false); // speech recognition state
+  const recognitionRef = useRef<any>(null); // holds the browser SpeechRecognition instance
 
+  // debounce user typing so we don't update the URL on every keystroke
   const [debouncedCode] = useDebounce(code, 600);
 
+  // When the debounced code or language changes, persist them to the URL so
+  // the current state can be shared via link.
   useEffect(() => {
     if (debouncedCode && debouncedCode !== DEFAULT_CODE) {
       setSearchParams({ code: encodeURIComponent(debouncedCode), lang: language });
     }
   }, [debouncedCode, language, setSearchParams]);
 
+  // Initialize darkMode based on OS/browser preference.
   useEffect(() => {
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     setDarkMode(prefersDark);
   }, []);
 
+  // Toggle the 'dark' class on the document root so Tailwind can apply dark
+  // theme styles. This reflects the `darkMode` state in the DOM.
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
 
-  // Voice Input
+  // Voice Input: try to create a SpeechRecognition instance if the browser
+  // supports it. We set up handlers to append transcribed text to the code
+  // textarea.
   useEffect(() => {
     if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -62,10 +77,13 @@ function App() {
       recognitionRef.current.lang = "en-US";
 
       recognitionRef.current.onresult = (event: any) => {
+        // Combine results into a single transcript string
         const transcript = Array.from(event.results)
           .map((result: any) => result[0])
           .map((result: any) => result.transcript)
           .join("");
+        // If the textarea still contains the DEFAULT_CODE placeholder, replace
+        // it with the transcript. Otherwise, append the transcribed text.
         setCode(prev => prev === DEFAULT_CODE ? transcript : prev + " " + transcript);
       };
 
@@ -73,6 +91,8 @@ function App() {
     }
   }, []);
 
+  // Start/stop voice recognition. This toggles the listening state and calls
+  // the underlying SpeechRecognition API.
   const toggleVoice = () => {
     if (listening) {
       recognitionRef.current?.stop();
@@ -82,17 +102,21 @@ function App() {
     }
   };
 
+  // Utility: copy text to clipboard and show a temporary UI indicator.
   const copyToClipboard = async (text: string) => {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Copy a shareable link (current URL) to the clipboard.
   const shareLink = () => {
     const url = window.location.href;
     copyToClipboard(url);
   };
 
+  // Export the current code + explanation as a Markdown file and trigger a
+  // download in the browser.
   const exportMarkdown = () => {
     const md = `# CodeWhisperer Explanation\n\nLanguage: ${LANGUAGES[language as keyof typeof LANGUAGES]?.name}\n\n\`\`\`${language}\n${code}\n\`\`\`\n\n## Explanation\n\n${explanation}`;
     const blob = new Blob([md], { type: "text/markdown" });
@@ -103,8 +127,11 @@ function App() {
     a.click();
   };
 
+  // Main action: call the OpenRouter / Chat Completions API to get an
+  // explanation of the provided code. We do minimal error handling and
+  // surface guidance if the API key is missing.
   const explainCode = async () => {
-    if (!code.trim()) return;
+    if (!code.trim()) return; // don't call API with empty code
     setLoading(true);
     setExplanation("");
 
@@ -136,8 +163,15 @@ function App() {
 
       if (!response.ok) throw new Error("API failed");
       const data = await response.json();
+      // We assume the API returns a standard `choices` array with a message
+      // containing the assistant's content. If the provider changes shape,
+      // this may need updating.
       setExplanation(data.choices[0].message.content);
     } catch (err) {
+      // Log the error for debugging while showing a user-friendly message
+      // in the UI. Keeping the console call avoids an "unused variable"
+      // lint error and provides useful runtime information.
+      console.error(err);
       setExplanation("Error: Check API key or try again later.");
     } finally {
       setLoading(false);
@@ -156,19 +190,23 @@ function App() {
           <p className="text-2xl opacity-90">Talk to code • Get instant AI explanations</p>
 
           <div className="flex justify-center gap-4 mt-10 flex-wrap">
+            {/* Language selector (updates `language` state) */}
             <select value={language} onChange={(e) => setLanguage(e.target.value)}
               className="px-6 py-4 rounded-2xl bg-white/10 backdrop-blur border border-purple-500/50">
               {Object.entries(LANGUAGES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
             </select>
 
+            {/* Toggle theme */}
             <button onClick={() => setDarkMode(!darkMode)} className="p-4 rounded-2xl bg-white/10 backdrop-blur hover:bg-white/20">
               {darkMode ? <Sun className="w-7 h-7" /> : <Moon className="w-7 h-7" />}
             </button>
 
+            {/* Voice control (if supported) */}
             <button onClick={toggleVoice} className={`p-4 rounded-2xl backdrop-blur transition ${listening ? "bg-red-500/80 animate-pulse" : "bg-white/10 hover:bg-white/20"}`}>
               {listening ? <MicOff className="w-7 h-7" /> : <Mic className="w-7 h-7" />}
             </button>
 
+            {/* Share/Export options appear once an explanation exists */}
             {explanation && (
               <>
                 <button onClick={shareLink} className="flex items-center gap-3 px-6 py-4 rounded-2xl bg-white/10 backdrop-blur hover:bg-white/20">
@@ -183,7 +221,7 @@ function App() {
         </div>
 
         <div className="grid lg:grid-cols-2 gap-8 mt-10">
-          {/* Left */}
+          {/* Left column: input area */}
           <div className="space-y-6">
             <div className="bg-black/40 backdrop-blur-xl rounded-3xl border border-purple-500/30 overflow-hidden shadow-2xl">
               <div className="bg-purple-900/60 px-8 py-5 flex justify-between items-center">
@@ -194,6 +232,7 @@ function App() {
                   <Copy className="w-5 h-5" /> {copied ? "Copied!" : "Copy"}
                 </button>
               </div>
+              {/* Code input textarea. Keep spellCheck off for code. */}
               <textarea
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
@@ -203,6 +242,7 @@ function App() {
               />
             </div>
 
+            {/* Primary action to request an explanation from the AI */}
             <button
               onClick={explainCode}
               disabled={loading || !code.trim()}
@@ -213,10 +253,11 @@ function App() {
             </button>
           </div>
 
-          {/* Right */}
+          {/* Right column: explanation and syntax-highlighted code */}
           <div className="space-y-6">
             {explanation ? (
               <div className="bg-white/10 backdrop-blur-xl rounded-3xl border border-purple-500/30 p-8 shadow-2xl">
+                {/* The API response is displayed as preformatted text */}
                 <pre className="whitespace-pre-wrap text-xl leading-relaxed font-medium">{explanation}</pre>
               </div>
             ) : (
@@ -228,6 +269,7 @@ function App() {
               </div>
             )}
 
+            {/* Syntax highlighted view of the current code */}
             <SyntaxHighlighter
               language={LANGUAGES[language as keyof typeof LANGUAGES]?.prism || "text"}
               style={darkMode ? vscDarkPlus : tomorrow}

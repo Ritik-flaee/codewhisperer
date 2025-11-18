@@ -1,3 +1,61 @@
+# CodeWhisperer
+
+Small Vite + React + TypeScript app that explains code using an LLM-powered API.
+
+What this repo contains
+- A React app (TypeScript) using Vite and Tailwind for styling.
+- Voice input via the browser SpeechRecognition API (when available).
+- Integration with OpenRouter-style chat completions (configured via env).
+
+Quick start
+
+1. Install dependencies
+
+```powershell
+npm install
+```
+
+2. Add environment variables
+
+Create a `.env.local` file in the project root (or set env vars in your shell):
+
+```
+VITE_OPENROUTER_API_KEY=your_api_key_here
+```
+
+The key is optional for local dev, but the Explain action will show a message
+if it is missing.
+
+3. Run development server
+
+```powershell
+npm run dev
+```
+
+Build & preview
+
+```powershell
+npm run build
+npm run preview
+```
+
+Notes
+- The app updates the URL with `code` and `lang` query params so you can share
+  a specific example with others.
+- Voice input uses the browser's built-in speech recognition (Chrome-based
+  browsers expose `webkitSpeechRecognition`). If the API is not available the
+  mic button will be present but will not start recording.
+- The project includes TypeScript and an ESLint configuration. Run
+
+```powershell
+npm run lint
+```
+
+to check lint issues.
+
+License
+
+This is provided as-is. Adjust per your needs.
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
