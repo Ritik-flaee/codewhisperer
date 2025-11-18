@@ -1,16 +1,20 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/* ========================================================================= */
+/*  CodeWhisperer – AI Code Generator + Explainer                            */
+/*  Built by Ritik[](https://github.com/Ritik-flaee)                          */
+/* ========================================================================= */
+
 import { useState, useEffect, useRef } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus, tomorrow } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Copy, Sparkles, Loader2, Download, Share2, Sun, Moon, Code2, Mic, MicOff, Globe } from "lucide-react";
+import {
+  Copy, Sparkles, Loader2, Download, Share2, Sun, Moon,
+  Mic, MicOff, Wand2, BookOpen
+} from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { useDebounce } from "use-debounce";
 
-// Read API key from Vite environment variables. If not set, some features will
-// show a helpful message instead of calling the remote API.
 const OPENROUTER_KEY = import.meta.env.VITE_OPENROUTER_API_KEY as string | undefined;
 
-// Supported languages for syntax highlighting and friendly labels.
 const LANGUAGES = {
   javascript: { name: "JavaScript", prism: "javascript" },
   typescript: { name: "TypeScript", prism: "typescript" },
@@ -23,51 +27,48 @@ const LANGUAGES = {
   html: { name: "HTML", prism: "markup" },
 };
 
-// Initial placeholder shown in the code textarea.
-const DEFAULT_CODE = `// Say something like: "Create a function that reverses a string in JavaScript"`;
+const DEFAULT_PROMPT = `Ask me anything, like:\n"Create a debounce hook in React"\n"Explain this Python list comprehension"\n"Write a FastAPI endpoint"`;
 
 function App() {
-  // Read and write URL search params so the app state is shareable via URL.
   const [searchParams, setSearchParams] = useSearchParams();
   const urlCode = searchParams.get("code");
   const urlLang = searchParams.get("lang") || "typescript";
+  const urlMode = searchParams.get("mode") || "generate";
 
-  // Main UI state
-  const [code, setCode] = useState(urlCode ? decodeURIComponent(urlCode) : DEFAULT_CODE);
+  const [input, setInput] = useState(urlCode ? decodeURIComponent(urlCode) : DEFAULT_PROMPT);
   const [language, setLanguage] = useState(urlLang);
-  const [explanation, setExplanation] = useState("");
+  const [output, setOutput] = useState("");
+  const [mode, setMode] = useState<"generate" | "explain">(urlMode === "explain" ? "explain" : "generate");
   const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false); // briefly shows "Copied!"
+  const [copied, setCopied] = useState(false);
   const [darkMode, setDarkMode] = useState(true);
-  const [listening, setListening] = useState(false); // speech recognition state
-  const recognitionRef = useRef<any>(null); // holds the browser SpeechRecognition instance
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
-  // debounce user typing so we don't update the URL on every keystroke
-  const [debouncedCode] = useDebounce(code, 600);
+  const [debouncedInput] = useDebounce(input, 600);
 
-  // When the debounced code or language changes, persist them to the URL so
-  // the current state can be shared via link.
   useEffect(() => {
-    if (debouncedCode && debouncedCode !== DEFAULT_CODE) {
-      setSearchParams({ code: encodeURIComponent(debouncedCode), lang: language });
+    if (debouncedInput && debouncedInput !== DEFAULT_PROMPT) {
+      setSearchParams({ code: encodeURIComponent(debouncedInput), lang: language, mode });
     }
-  }, [debouncedCode, language, setSearchParams]);
+  }, [debouncedInput, language, mode, setSearchParams]);
 
-  // Initialize darkMode based on OS/browser preference.
   useEffect(() => {
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     setDarkMode(prefersDark);
   }, []);
 
-  // Toggle the 'dark' class on the document root so Tailwind can apply dark
-  // theme styles. This reflects the `darkMode` state in the DOM.
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
 
-  // Voice Input: try to create a SpeechRecognition instance if the browser
-  // supports it. We set up handlers to append transcribed text to the code
-  // textarea.
+  useEffect(() => {
+    const hasCode = /[{};=()[\]]|function|const|let|var|=>|class|def|import|export/.test(input);
+    const wantsGenerate = /write|create|build|make|generate|code for/i.test(input);
+    if (wantsGenerate || !hasCode) setMode("generate");
+    else setMode("explain");
+  }, [input]);
+
   useEffect(() => {
     if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -77,72 +78,61 @@ function App() {
       recognitionRef.current.lang = "en-US";
 
       recognitionRef.current.onresult = (event: any) => {
-        // Combine results into a single transcript string
         const transcript = Array.from(event.results)
-          .map((result: any) => result[0])
-          .map((result: any) => result.transcript)
+          .map((r: any) => r[0].transcript)
           .join("");
-        // If the textarea still contains the DEFAULT_CODE placeholder, replace
-        // it with the transcript. Otherwise, append the transcribed text.
-        setCode(prev => prev === DEFAULT_CODE ? transcript : prev + " " + transcript);
+        setInput(prev => prev === DEFAULT_PROMPT ? transcript : prev + " " + transcript);
       };
 
       recognitionRef.current.onend = () => setListening(false);
     }
   }, []);
 
-  // Start/stop voice recognition. This toggles the listening state and calls
-  // the underlying SpeechRecognition API.
   const toggleVoice = () => {
-    if (listening) {
-      recognitionRef.current?.stop();
-    } else {
-      recognitionRef.current?.start();
-      setListening(true);
-    }
+    listening ? recognitionRef.current?.stop() : recognitionRef.current?.start();
+    setListening(!listening);
   };
 
-  // Utility: copy text to clipboard and show a temporary UI indicator.
   const copyToClipboard = async (text: string) => {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Copy a shareable link (current URL) to the clipboard.
-  const shareLink = () => {
-    const url = window.location.href;
-    copyToClipboard(url);
-  };
+  const shareLink = () => copyToClipboard(window.location.href);
 
-  // Export the current code + explanation as a Markdown file and trigger a
-  // download in the browser.
   const exportMarkdown = () => {
-    const md = `# CodeWhisperer Explanation\n\nLanguage: ${LANGUAGES[language as keyof typeof LANGUAGES]?.name}\n\n\`\`\`${language}\n${code}\n\`\`\`\n\n## Explanation\n\n${explanation}`;
+    const title = mode === "generate" ? "Generated Code" : "Code Explanation";
+    const md = `# CodeWhisperer – ${title}\n\n**Language:** ${LANGUAGES[language as keyof typeof LANGUAGES]?.name}\n\n\`\`\`${language}\n${mode === "generate" ? output : input}\n\`\`\`\n\n**Prompt:**\n${input}\n\n${mode === "explain" ? `**Explanation:**\n\n${output}` : ""}\n\n---\nMade with love by [Ritik](https://github.com/Ritik-flaee)`;
     const blob = new Blob([md], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "codewhisperer-explanation.md";
+    a.download = `codewhisperer-${mode}.md`;
     a.click();
   };
 
-  // Main action: call the OpenRouter / Chat Completions API to get an
-  // explanation of the provided code. We do minimal error handling and
-  // surface guidance if the API key is missing.
-  const explainCode = async () => {
-    if (!code.trim()) return; // don't call API with empty code
+  const runAI = async () => {
+    if (!input.trim()) return;
     setLoading(true);
-    setExplanation("");
+    setOutput("");
 
     if (!OPENROUTER_KEY) {
-      setExplanation("Missing API key. Add VITE_OPENROUTER_API_KEY to .env.local");
+      setOutput("Missing API key → Add VITE_OPENROUTER_API_KEY in .env.local");
       setLoading(false);
       return;
     }
 
+    const systemPrompt = mode === "generate"
+      ? `You are a senior ${LANGUAGES[language as keyof typeof LANGUAGES]?.name} developer. Write clean, modern code. Add minimal comments only if needed. No explanations.`
+      : `You are an expert teacher. Explain code clearly using bullet points and simple language. Never write code.`;
+
+    const userPrompt = mode === "generate"
+      ? `Write this in ${LANGUAGES[language as keyof typeof LANGUAGES]?.name}:\n\n${input}`
+      : `Explain this ${language} code:\n\n${input}`;
+
     try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -153,130 +143,159 @@ function App() {
         body: JSON.stringify({
           model: "google/gemini-2.5-flash",
           messages: [
-            { role: "system", content: `You are an expert ${LANGUAGES[language as keyof typeof LANGUAGES]?.name || "programming"} teacher. Explain clearly in bullet points.` },
-            { role: "user", content: `Explain this ${language} code:\n\n${code}` },
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
           ],
-          temperature: 0.7,
-          max_tokens: 1000,
+          temperature: mode === "generate" ? 0.3 : 0.7,
+          max_tokens: 2000,
         }),
       });
 
-      if (!response.ok) throw new Error("API failed");
-      const data = await response.json();
-      // We assume the API returns a standard `choices` array with a message
-      // containing the assistant's content. If the provider changes shape,
-      // this may need updating.
-      setExplanation(data.choices[0].message.content);
-    } catch (err) {
-      // Log the error for debugging while showing a user-friendly message
-      // in the UI. Keeping the console call avoids an "unused variable"
-      // lint error and provides useful runtime information.
-      console.error(err);
-      setExplanation("Error: Check API key or try again later.");
+      if (!res.ok) throw new Error("API error");
+      const data = await res.json();
+      setOutput(data.choices[0].message.content);
+    } catch {
+      setOutput("Error: Check your API key or internet connection.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className={`min-h-screen bg-gradient-to-br ${darkMode ? "from-slate-900 via-purple-900 to-slate-900" : "from-purple-100 via-pink-100 to-purple-100"} transition-all duration-500`}>
+    <div className={`min-h-screen bg-gradient-to-br ${darkMode ? "from-slate-900 via-purple-900 to-slate-900" : "from-purple-50 via-pink-50 to-purple-50"} transition-all duration-500`}>
       <div className="container mx-auto p-6 max-w-7xl">
-        <div className="text-center py-12">
-          <h1 className="text-6xl font-bold mb-4 flex items-center justify-center gap-4">
-            <Sparkles className="w-16 h-16 text-purple-400 animate-pulse" />
-            CodeWhisperer
-            <Globe className="w-12 h-12 text-pink-400" />
-          </h1>
-          <p className="text-2xl opacity-90">Talk to code • Get instant AI explanations</p>
 
-          <div className="flex justify-center gap-4 mt-10 flex-wrap">
-            {/* Language selector (updates `language` state) */}
+        {/* Header */}
+        <div className="text-center py-12">
+          <h1 className="text-7xl font-black mb-6 bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent flex items-center justify-center gap-6">
+            <Sparkles className="w-20 h-20" />
+            CodeWhisperer
+            <Sparkles className="w-20 h-20" />
+          </h1>
+          <p className="text-2xl font-medium opacity-80 mb-10">Generate • Explain • Speak • Share</p>
+
+          {/* Top Controls */}
+          <div className="flex justify-center gap-6 flex-wrap mb-10">
             <select value={language} onChange={(e) => setLanguage(e.target.value)}
-              className="px-6 py-4 rounded-2xl bg-white/10 backdrop-blur border border-purple-500/50">
-              {Object.entries(LANGUAGES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
+              className="px-8 py-5 rounded-3xl bg-white/10 backdrop-blur border border-purple-500/50 text-lg font-medium">
+              {Object.entries(LANGUAGES).map(([k, v]) => (
+                <option key={k} value={k}>{v.name}</option>
+              ))}
             </select>
 
-            {/* Toggle theme */}
-            <button onClick={() => setDarkMode(!darkMode)} className="p-4 rounded-2xl bg-white/10 backdrop-blur hover:bg-white/20">
-              {darkMode ? <Sun className="w-7 h-7" /> : <Moon className="w-7 h-7" />}
+            <button onClick={() => setDarkMode(!darkMode)} className="p-5 rounded-3xl bg-white/10 backdrop-blur hover:bg-white/20">
+              {darkMode ? <Sun className="w-9 h-9" /> : <Moon className="w-9 h-9" />}
             </button>
 
-            {/* Voice control (if supported) */}
-            <button onClick={toggleVoice} className={`p-4 rounded-2xl backdrop-blur transition ${listening ? "bg-red-500/80 animate-pulse" : "bg-white/10 hover:bg-white/20"}`}>
-              {listening ? <MicOff className="w-7 h-7" /> : <Mic className="w-7 h-7" />}
+            <button onClick={toggleVoice}
+              className={`p-5 rounded-3xl backdrop-blur transition ${listening ? "bg-red-600 animate-pulse" : "bg-white/10 hover:bg-white/20"}`}>
+              {listening ? <MicOff className="w-9 h-9" /> : <Mic className="w-9 h-9" />}
             </button>
 
-            {/* Share/Export options appear once an explanation exists */}
-            {explanation && (
+            {output && (
               <>
-                <button onClick={shareLink} className="flex items-center gap-3 px-6 py-4 rounded-2xl bg-white/10 backdrop-blur hover:bg-white/20">
-                  <Share2 /> Share Link
+                <button onClick={shareLink} className="flex items-center gap-3 px-8 py-5 rounded-3xl bg-white/10 backdrop-blur hover:bg-white/20">
+                  <Share2 className="w-7 h-7" /> Share
                 </button>
-                <button onClick={exportMarkdown} className="flex items-center gap-3 px-6 py-4 rounded-2xl bg-white/10 backdrop-blur hover:bg-white/20">
-                  <Download /> Markdown
+                <button onClick={exportMarkdown} className="flex items-center gap-3 px-8 py-5 rounded-3xl bg-white/10 backdrop-blur hover:bg-white/20">
+                  <Download className="w-7 h-7" /> Markdown
                 </button>
               </>
             )}
           </div>
+
+          {/* Made with love by Ritik — Clean & Perfect */}
+          <p className="text-lg font-medium opacity-80">
+            Made with{" "}
+            <span className="text-red-500 text-2xl animate-pulse">love</span>{" "}
+            by{" "}
+            <a
+              href="https://github.com/Ritik-flaee"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-bold text-purple-500 hover:text-purple-400 underline decoration-purple-300 underline-offset-4 transition-colors"
+            >
+              Ritik
+            </a>
+          </p>
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-8 mt-10">
-          {/* Left column: input area */}
-          <div className="space-y-6">
-            <div className="bg-black/40 backdrop-blur-xl rounded-3xl border border-purple-500/30 overflow-hidden shadow-2xl">
-              <div className="bg-purple-900/60 px-8 py-5 flex justify-between items-center">
-                <span className="text-xl font-bold flex items-center gap-3">
-                  <Code2 className="w-6 h-6" /> Your Code
-                </span>
-                <button onClick={() => copyToClipboard(code)} className="flex items-center gap-2 px-5 py-3 bg-white/10 rounded-xl hover:bg-white/20">
-                  <Copy className="w-5 h-5" /> {copied ? "Copied!" : "Copy"}
-                </button>
+        {/* Main Grid */}
+        <div className="grid lg:grid-cols-2 gap-10 mt-16">
+
+          {/* Input */}
+          <div className="space-y-8">
+            <div className="bg-black/40 backdrop-blur-2xl rounded-3xl border border-purple-500/40 shadow-2xl overflow-hidden">
+              <div className="bg-gradient-to-r from-purple-800/80 to-pink-800/80 px-10 py-7 flex justify-between items-center">
+                <div className="flex items-center gap-5">
+                  {mode === "generate" ? <Wand2 className="w-10 h-10" /> : <BookOpen className="w-10 h-10" />}
+                  <span className="text-3xl font-bold">
+                    {mode === "generate" ? "What should I build?" : "Paste your code"}
+                  </span>
+                </div>
+                <div className="flex gap-4">
+                  <button onClick={() => setMode("generate")}
+                    className={`px-8 py-4 rounded-2xl font-bold text-lg transition ${mode === "generate" ? "bg-white text-black" : "bg-white/20"}`}>
+                    Generate
+                  </button>
+                  <button onClick={() => setMode("explain")}
+                    className={`px-8 py-4 rounded-2xl font-bold text-lg transition ${mode === "explain" ? "bg-white text-black" : "bg-white/20"}`}>
+                    Explain
+                  </button>
+                </div>
               </div>
-              {/* Code input textarea. Keep spellCheck off for code. */}
+
               <textarea
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                className="w-full h-96 bg-black/70 text-white font-mono text-base p-8 outline-none resize-none"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                className="w-full h-96 bg-black/70 text-white font-mono text-lg p-10 outline-none resize-none"
                 spellCheck={false}
-                placeholder="Paste code or press mic to speak..."
+                placeholder={mode === "generate" ? "e.g. Create a React debounce hook" : "Paste your code here..."}
               />
             </div>
 
-            {/* Primary action to request an explanation from the AI */}
             <button
-              onClick={explainCode}
-              disabled={loading || !code.trim()}
-              className="w-full py-6 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-3xl font-bold text-2xl shadow-2xl transform hover:scale-105 transition-all disabled:scale-100 flex items-center justify-center gap-4"
+              onClick={runAI}
+              disabled={loading || !input.trim()}
+              className="w-full py-9 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 rounded-3xl font-black text-4xl shadow-2xl transform hover:scale-105 transition-all disabled:opacity-60 flex items-center justify-center gap-8"
             >
-              {loading ? <Loader2 className="animate-spin w-10 h-10" /> : <Sparkles className="w-10 h-10" />}
-              {loading ? "Thinking..." : "Explain This Code"}
+              {loading ? <Loader2 className="animate-spin w-16 h-16" /> : <Sparkles className="w-16 h-16" />}
+              {loading ? "Working..." : mode === "generate" ? "Generate Code" : "Explain Code"}
             </button>
           </div>
 
-          {/* Right column: explanation and syntax-highlighted code */}
-          <div className="space-y-6">
-            {explanation ? (
-              <div className="bg-white/10 backdrop-blur-xl rounded-3xl border border-purple-500/30 p-8 shadow-2xl">
-                {/* The API response is displayed as preformatted text */}
-                <pre className="whitespace-pre-wrap text-xl leading-relaxed font-medium">{explanation}</pre>
+          {/* Output */}
+          <div className="space-y-10">
+            {output ? (
+              <div className="bg-white/10 backdrop-blur-2xl rounded-3xl border border-purple-500/40 shadow-2xl p-10">
+                <div className="flex justify-between items-center mb-8">
+                  <h3 className="text-3xl font-bold">{mode === "generate" ? "Generated Code" : "Explanation"}</h3>
+                  <button onClick={() => copyToClipboard(output)}
+                    className="flex items-center gap-4 px-8 py-4 bg-white/20 rounded-2xl hover:bg-white/30 transition">
+                    <Copy className="w-7 h-7" /> {copied ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+
+                {mode === "generate" ? (
+                  <SyntaxHighlighter
+                    language={LANGUAGES[language as keyof typeof LANGUAGES]?.prism || "text"}
+                    style={darkMode ? vscDarkPlus : tomorrow}
+                    customStyle={{ borderRadius: "20px", padding: "2.5rem", fontSize: "18px" }}
+                  >
+                    {output}
+                  </SyntaxHighlighter>
+                ) : (
+                  <pre className="whitespace-pre-wrap text-xl leading-relaxed font-medium">{output}</pre>
+                )}
               </div>
             ) : (
-              <div className="bg-white/5 backdrop-blur-xl rounded-3xl border-dashed border-purple-500/50 h-96 flex items-center justify-center">
-                <div className="text-center">
-                  <Sparkles className="w-24 h-24 mx-auto mb-6 opacity-30" />
-                  <p className="text-2xl opacity-70">Press mic or paste code → magic happens</p>
+              <div className="bg-white/5 backdrop-blur-xl rounded-3xl border-dashed border-purple-500/50 h-96 flex items-center justify-center text-center p-12">
+                <div>
+                  <Sparkles className="w-32 h-32 mx-auto mb-10 opacity-20" />
+                  <p className="text-3xl opacity-70">Your AI result will appear here...</p>
                 </div>
               </div>
             )}
-
-            {/* Syntax highlighted view of the current code */}
-            <SyntaxHighlighter
-              language={LANGUAGES[language as keyof typeof LANGUAGES]?.prism || "text"}
-              style={darkMode ? vscDarkPlus : tomorrow}
-              customStyle={{ borderRadius: "24px", padding: "2rem", fontSize: "16px" }}
-            >
-              {code}
-            </SyntaxHighlighter>
           </div>
         </div>
       </div>
